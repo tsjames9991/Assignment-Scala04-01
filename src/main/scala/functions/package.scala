@@ -1,38 +1,39 @@
 import java.util.Date
-
 import configuration._
-import org.apache.log4j.Logger
-import twitter4j.{Query, Status, TwitterFactory}
+import twitter4j.{Paging, TwitterFactory}
 import twitter4j.auth.AccessToken
-
-import scala.collection.JavaConverters._
 import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
 package object functions {
   val twitter = new TwitterFactory().getInstance()
   twitter.setOAuthConsumer(consumerKey, consumerSecret)
   twitter.setOAuthAccessToken(new AccessToken(access_key, access_token))
-  val log = Logger.getLogger(this.getClass)
 
-  def getTotalTweets() = Future {
-    val totalTweets = twitter.getHomeTimeline.asScala
-    log.info(s"\nNumber of Tweets : ${totalTweets.size}")
+  def getTotalTweets(): Future[Int] = Future {
+    twitter.showUser(searchParameter).getStatusesCount
   }
 
-  def search(toSearch: String) = Future {
-    val query = new Query(toSearch)
-    val result = twitter.search(query)
-    log.info(s"\nTweets Found : ")
-    for (status: Status <- result.getTweets.asScala) {
-      log.info("\n" + status.getText)
-    }
+  def search(toSearch: String): Future[List[String]] = Future {
+    val result = twitter.getUserTimeline(searchParameter, new Paging(initial,limit))
+    val statusList = for {
+      i <- 0 until result.size
+      if result.get(i).getText.contains(toSearch)
+    } yield result.get(i).getText
+    statusList.toList
   }
 
   //noinspection ScalaDeprecation
-  def averageTweets()=Future {
-  val totalTweets = twitter.getHomeTimeline
-    val pastDate = new Date(2018,1,1)
-    val timePassed = new Date().getTime - pastDate.getTime
+  def averageTweets(): Future[String] = Future {
+    val totalTweets = twitter.showUser(searchParameter).getStatusesCount
+    val timePassed = (new Date().getTime - twitter.showUser(searchParameter).getCreatedAt.getTime) / (1000 * 60 * 60 * 24)
+    s"\nAverage Tweets Per Day : ${totalTweets/timePassed}"
+  }
 
+  def getLikesAndReTweets(): Future[String] = Future {
+    val tweets = twitter.getUserTimeline(searchParameter, new Paging(initial,limit))
+    val reTweets = for (i <- 0 until tweets.size) yield tweets.get(i).getRetweetCount
+    val favourites = for (i <- 0 until tweets.size) yield tweets.get(i).getFavoriteCount
+    s"\nAverage Re-Tweets: ${reTweets.sum / tweets.size} per tweet\nAverage Favourites: ${favourites.sum / tweets.size} per tweet"
   }
 }
